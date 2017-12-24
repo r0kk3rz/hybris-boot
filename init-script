@@ -29,6 +29,14 @@ ALWAYSDEBUG=%ALWAYSDEBUG%
 DATA_PARTITION=%DATA_PART%
 DEFAULT_OS=%DEFAULT_OS%
 
+LED_RED="/sys/class/leds/led:rgb_red/brightness"
+LED_GREEN="/sys/class/leds/led:rgb_green/brightness"
+LED_BLUE="/sys/class/leds/led:rgb_blue/brightness"
+
+KEY_EVENT=/dev/input/event2
+KEY_LOG=key-events.txt
+
+
 set_welcome_msg(){
 cat <<EOF > /etc/issue.net
 Welcome to the Mer/SailfishOS Boat loader debug init system.
@@ -82,6 +90,54 @@ Then you can mount and modify exported mass storage on host. When done
 EOF
 fi
 }
+
+led_amber() {
+  echo 255 > ${LED_RED}
+  echo 255 > ${LED_GREEN}
+  echo   0 > ${LED_BLUE}
+}
+
+led_orange() {
+  echo 255 > ${LED_RED}
+  echo 100 > ${LED_GREEN}
+  echo   0 > ${LED_BLUE}
+}
+
+led_off() {
+  echo   0 > ${LED_RED}
+  echo   0 > ${LED_GREEN}
+  echo   0 > ${LED_BLUE}
+}
+
+do_keyevent(){
+  echo "Wait for Key Events"
+
+  mkdir -m 755 /dev/input
+  mknod -m 600 ${KEY_EVENT} c 13 67
+
+  cat ${KEY_EVENT} > ${KEYLOG} &
+
+  led_amber
+
+  sleep 3
+  pkill -f "cat ${KEY_EVENT}"
+}
+
+sony_recovery_boot(){
+
+  ywrwter=`busybox wc -c <${KEYLOG}`
+  echo "key event size is: $ywrwter" >> ${LOG}
+
+  warmboot_recovery=0x77665502
+
+  if [ $ywrwter -gt 32 ] || grep -q warmboot=${warmboot_recovery} /proc/cmdline; then
+    echo "ENTERING RECOVERY"
+    led_orange
+  else
+    led_off
+  fi
+}
+
 
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
 
@@ -297,6 +353,9 @@ if [ "$DONE_SWITCH" = "no" ]; then
 
     do_mount_devprocsys
 
+    do_keyevent
+    sony_recovery_boot
+
     do_hotplug_scan
 
     # Support /dev/block/mmcXXX only in initrd phase
@@ -356,6 +415,9 @@ else
     TELNET_DEBUG_PORT=2323
 
     do_mount_devprocsys
+
+    do_keyevent
+    sony_recovery_boot
 
     HALT_BOOT="n"
     [ -f /init_enter_debug2 ] && HALT_BOOT="y"
